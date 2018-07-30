@@ -78,6 +78,14 @@ fil_type_is_data(
 
 struct fil_node_t;
 
+enum fil_encryption_status {
+	ALL_ENCRYPTED,
+	ALL_DECRYPTED,
+	ENCRYPT_DECRYPT_MIX
+};
+
+extern fil_encryption_status	encrypt_status;
+
 /** Tablespace or log data space */
 struct fil_space_t {
 	char*		name;	/*!< Tablespace name */
@@ -522,6 +530,8 @@ struct fil_system_t {
 					/* !< TRUE if fil_space_create()
 					has issued a warning about
 					potential space_id reuse */
+	ulint		n_encrypted;	/* number of encrypted tablespace. */
+	ulint		n_unencrypted;	/* number of unencrypted tablespace. */
 };
 
 /** The tablespace memory cache. This variable is NULL before the module is
@@ -593,7 +603,8 @@ fil_space_create(
 	ulint			flags,
 	fil_type_t		purpose,
 	fil_space_crypt_t*	crypt_data,
-	fil_encryption_t	mode = FIL_ENCRYPTION_DEFAULT)
+	fil_encryption_t	mode = FIL_ENCRYPTION_DEFAULT,
+	bool			newly_created=false)
 	MY_ATTRIBUTE((warn_unused_result));
 
 /*******************************************************************//**

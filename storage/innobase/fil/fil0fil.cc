@@ -152,6 +152,8 @@ fil_addr_t	fil_addr_null = {FIL_NULL, 0};
 initialized. */
 UNIV_INTERN fil_system_t*	fil_system	= NULL;
 
+fil_encryption_status	encrypt_status = ENCRYPT_DECRYPT_MIX;
+
 /** At this age or older a space/page will be rotated */
 UNIV_INTERN extern uint srv_fil_crypt_rotate_key_age;
 UNIV_INTERN extern ib_mutex_t fil_crypt_threads_mutex;
@@ -661,6 +663,13 @@ retry:
 		if (!space->crypt_data) {
 			space->crypt_data = fil_space_read_crypt_data(
 				page_size_t(space->flags), page);
+		}
+
+		if (space->crypt_data != NULL
+		    && space->crypt_data->min_key_version > 0) {
+			fil_system->n_encrypted++;
+		} else {
+			fil_system->n_unencrypted++;
 		}
 
 		ut_free(buf2);
@@ -1448,7 +1457,8 @@ fil_space_create(
 	ulint			flags,
 	fil_type_t		purpose,
 	fil_space_crypt_t*	crypt_data,
-	fil_encryption_t	mode)
+	fil_encryption_t	mode,
+	bool			newly_created)
 {
 	fil_space_t*	space;
 
@@ -1510,6 +1520,21 @@ fil_space_create(
 	space->flags = flags;
 
 	space->magic_n = FIL_SPACE_MAGIC_N;
+
+	if (newly_created) {
+
+		if ((encrypt_status == ALL_ENCRYPTED
+		    || encrypt_status == ALL_DECRYPTED) && srv_encrypt_tables) {
+			encrypt_status = ENCRYPT_DECRYPT_MIX;
+		}
+
+		if (crypt_data == NULL) {
+			fil_system->n_unencrypted++;
+		} else {
+			fil_system->n_encrypted++;
+		}
+	}
+
 	space->crypt_data = crypt_data;
 
 	DBUG_LOG("tablespace",
@@ -1907,6 +1932,8 @@ fil_init(
 	UT_LIST_INIT(fil_system->named_spaces, &fil_space_t::named_spaces);
 
 	fil_system->max_n_open = max_n_open;
+
+	fil_system->n_encrypted = fil_system->n_unencrypted = 0;
 
 	fil_space_crypt_init();
 }
@@ -3754,7 +3781,7 @@ fil_ibd_create(
 	}
 
 	space = fil_space_create(name, space_id, flags, FIL_TYPE_TABLESPACE,
-				 crypt_data, mode);
+				 crypt_data, mode, true);
 
 	fil_node_t* node = NULL;
 
@@ -3777,6 +3804,7 @@ fil_ibd_create(
 			MLOG_FILE_CREATE2, space_id, 0, file->name,
 			NULL, space->flags & ~FSP_FLAGS_MEM_MASK, &mtr);
 		fil_name_write(space, 0, file, &mtr);
+		dict_sys_update_encrypt_status(&mtr);
 		mtr.commit();
 
 		node->block_size = block_size;

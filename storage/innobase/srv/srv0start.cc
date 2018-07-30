@@ -2376,6 +2376,7 @@ files_checked:
 			return(err);
 		}
 
+		dict_sys_read_encrypt_status();
 		/* Upgrade or resize or rebuild the redo logs before
 		generating any dirty pages, so that the old redo log
 		files will not be written to. */

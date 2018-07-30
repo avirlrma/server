@@ -555,3 +555,40 @@ dict_create(void)
 
 	return(err);
 }
+
+/** Read the encrypt status from dict hdr page and assign it to
+the encrypt status variable. Invoked during startup of the server. */
+void
+dict_sys_read_encrypt_status()
+{
+	mtr_t	mtr;
+
+	mtr_start(&mtr);
+
+	dict_hdr_t*	dict_hdr = dict_hdr_get(&mtr);
+	ulint		read_encrypt_status;
+
+	read_encrypt_status = mtr_read_ulint(
+			dict_hdr + DICT_HDR_ENCRYPT_STATUS,
+			MLOG_4BYTES, &mtr);
+
+	mtr_commit(&mtr);
+
+	if (read_encrypt_status == DICT_HDR_FIRST_ID) {
+		encrypt_status = ENCRYPT_DECRYPT_MIX;
+	}
+
+	encrypt_status = (fil_encryption_status) read_encrypt_status;
+}
+
+/** Update the encrypt status of dict_hdr page.
+@param[in,out]	mtr	mini-transaction which does changes in encrypt status. */
+void
+dict_sys_update_encrypt_status(
+	mtr_t*			mtr)
+{
+	dict_hdr_t*	dict_hdr = dict_hdr_get(mtr);
+
+	mlog_write_ulint(dict_hdr + DICT_HDR_ENCRYPT_STATUS, encrypt_status,
+			 MLOG_4BYTES, mtr);
+}

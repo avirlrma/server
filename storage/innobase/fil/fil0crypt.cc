@@ -2079,12 +2079,15 @@ fil_crypt_complete_rotate_space(
 		* the iteration is done
 		*/
 		bool should_flush = last && done;
+		bool encrypt_process = false;
 
 		if (should_flush) {
 			/* we're the last active thread */
 			crypt_data->rotate_state.flushing = true;
 			crypt_data->min_key_version =
 				crypt_data->rotate_state.min_key_version_found;
+
+			encrypt_process = crypt_data->min_key_version > 0;
 		}
 
 		/* inform scrubbing */
@@ -2105,7 +2108,37 @@ fil_crypt_complete_rotate_space(
 		}
 
 		if (should_flush) {
+			mutex_enter(&fil_system->mutex);
+
+			if (encrypt_process) {
+				fil_system->n_encrypted++;
+				fil_system->n_unencrypted--;
+			} else {
+				fil_system->n_encrypted--;
+				fil_system->n_unencrypted++;
+			}
+
+			bool is_last = false;
+			if (fil_system->n_unencrypted == 0) {
+				encrypt_status = ALL_ENCRYPTED;
+				is_last = true;
+			}
+
+			if (fil_system->n_encrypted == 0) {
+				encrypt_status = ALL_DECRYPTED;
+				is_last = true;
+			}
+
+			mutex_exit(&fil_system->mutex);
+
 			fil_crypt_flush_space(state);
+
+			if (is_last) {
+				mtr_t	mtr;
+				mtr_start(&mtr);
+				dict_sys_update_encrypt_status(&mtr);
+				mtr_commit(&mtr);
+			}
 
 			mutex_enter(&crypt_data->mutex);
 			crypt_data->rotate_state.flushing = false;
